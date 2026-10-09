@@ -2,90 +2,48 @@ plugins {
     alias(libs.plugins.fabric.loom)
 }
 
-val archivesBaseName = providers.gradleProperty("archives_base_name").get()
-val mavenGroup = providers.gradleProperty("maven_group").get()
-
 base {
-    archivesName = archivesBaseName
-    version = libs.versions.mod.version.get()
-    group = mavenGroup
+    archivesName.set("dfizaddon")
 }
 
+group = "com.nnpg"
+version = libs.versions.mod.version.get()
+
 repositories {
+    mavenCentral()
     maven {
-        name = "meteor-maven"
+        name = "Meteor Releases"
         url = uri("https://maven.meteordev.org/releases")
     }
     maven {
-        name = "meteor-maven-snapshots"
+        name = "Meteor Snapshots"
         url = uri("https://maven.meteordev.org/snapshots")
     }
 }
 
 dependencies {
-    // Fabric
     minecraft(libs.minecraft)
-    implementation(libs.fabric.loader)
-
-    // Meteor
-    implementation(libs.meteor.client)
+    mappings("net.fabricmc:yarn:${libs.versions.yarn.get()}:v2")
+    modImplementation(libs.fabric.loader)
+    modImplementation(libs.meteor.client)
 }
 
 java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(libs.versions.jdk.get().toInt()))
-    }
-}
-
-fun toMinecraftCompat(version: String): String {
-    val stable = Regex("""^(\d{2})\.([1-9]\d*)(?:\.(\d+))?$""")
-
-    stable.matchEntire(version)?.let {
-        val (year, drop, _) = it.destructured
-        return "~$year.$drop"
-    }
-
-    val pre = Regex("""^(\d{2})\.([1-9]\d*)-pre[-.](\d+)$""")
-    pre.matchEntire(version)?.let {
-        return version.replace("-pre-", "-pre.")
-    }
-
-    val rc = Regex("""^(\d{2})\.([1-9]\d*)-rc[-.](\d+)$""")
-    rc.matchEntire(version)?.let {
-        return version.replace("-rc-", "-rc.")
-    }
-
-    return version
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
 }
 
 tasks {
     processResources {
-        val propertyMap = mapOf(
-            "version" to project.version,
-            "minecraft_version" to toMinecraftCompat(libs.versions.minecraft.get()),
-            "jdk_version" to libs.versions.jdk.get(),
-        )
-
-        inputs.properties(propertyMap)
+        val props = mapOf("version" to project.version)
+        inputs.properties(props)
         filesMatching("fabric.mod.json") {
-            expand(propertyMap)
+            expand(props)
         }
     }
 
-    jar {
-        inputs.property("archivesName", archivesBaseName)
-
-        from("LICENSE") {
-            rename { "${it}_$archivesBaseName" }
-        }
-    }
-
-    withType<JavaCompile>().configureEach {
-        options.compilerArgs.addAll(
-            listOf(
-                "-Xlint:deprecation",
-                "-Xlint:unchecked"
-            )
-        )
+    withType<JavaCompile> {
+        options.encoding = "UTF-8"
+        options.release.set(21)
     }
 }
