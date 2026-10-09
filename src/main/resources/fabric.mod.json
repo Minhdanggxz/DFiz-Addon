@@ -1,36 +1,21 @@
 {
   "schemaVersion": 1,
-  "id": "addon-template",
+  "id": "dfizaddon",
   "version": "${version}",
-  "name": "Addon Template",
-  "description": "An addon template for Meteor Client addons.",
-  "authors": [
-    "seasnail"
-  ],
-  "contact": {
-    "sources": "https://github.com/MeteorDevelopment/meteor-addon-template"
-  },
-  "icon": "assets/template/icon.png",
+  "name": "DFizAddon",
+  "description": "DFizAddon modules for Meteor Client 1.21.1.",
+  "authors": ["you"],
   "environment": "client",
   "entrypoints": {
-    "meteor": [
-      "com.example.addon.AddonTemplate"
-    ]
+    "meteor": ["com.nnpg.dfizaddon.DFizAddon"]
   },
-  "mixins": [
-    "addon-template.mixins.json"
-  ],
+  "mixins": ["dfizaddon.mixins.json"],
   "custom": {
-    "meteor-client:color": "225,25,25",
-    "modmenu": {
-      "parent": {
-        "id": "meteor-client"
-      }
-    }
+    "meteor-client:color": "255,120,200"
   },
   "depends": {
-    "java": ">=${jdk_version}",
-    "minecraft": "${minecraft_version}",
+    "java": ">=21",
+    "minecraft": "1.21.1",
     "meteor-client": "*"
   }
 }
