@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "package": "com.nnpg.dfizaddon.mixins",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "CameraMixin",
+    "EntityMixin",
+    "TridentItemMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
