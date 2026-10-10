@@ -17,6 +17,7 @@ import net.minecraft.block.Blocks;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.LightType;
 import net.minecraft.world.chunk.WorldChunk;
@@ -55,6 +56,13 @@ public class DFizClusterFinder extends Module {
         .defaultValue(3)
         .min(1)
         .sliderRange(1, 30)
+        .build()
+    );
+
+    private final Setting<Boolean> lightOnlyMode = sgGeneral.add(new BoolSetting.Builder()
+        .name("light-only")
+        .description("Find clusters from block light only. Use this when the server hides the amethyst blocks.")
+        .defaultValue(true)
         .build()
     );
 
@@ -259,11 +267,12 @@ public class DFizClusterFinder extends Module {
         ClientWorld world = mc.world;
         int threshold = minClusterSize.get();
         boolean notify = chatAlert.get();
+        boolean lightOnly = lightOnlyMode.get();
 
         scanInProgress.set(true);
         executor.execute(() -> {
             try {
-                for (WorldChunk chunk : batch) scanChunk(world, chunk, threshold, notify);
+                for (WorldChunk chunk : batch) scanChunk(world, chunk, threshold, notify, lightOnly);
             } catch (Exception ignored) {
             } finally {
                 scanInProgress.set(false);
@@ -271,7 +280,7 @@ public class DFizClusterFinder extends Module {
         });
     }
 
-    private void scanChunk(ClientWorld world, WorldChunk chunk, int threshold, boolean notify) {
+    private void scanChunk(ClientWorld world, WorldChunk chunk, int threshold, boolean notify, boolean lightOnly) {
         ChunkPos cp = chunk.getPos();
         Set<BlockPos> hits = new HashSet<>();
         int baseX = cp.x << 4;
@@ -282,7 +291,7 @@ public class DFizClusterFinder extends Module {
             for (int lx = 0; lx < 16; lx++) {
                 for (int lz = 0; lz < 16; lz++) {
                     pos.set(baseX + lx, y, baseZ + lz);
-                    if (world.getLightLevel(LightType.BLOCK, pos) == 5 && isAmethystNearby(world, pos)) {
+                    if (world.getLightLevel(LightType.BLOCK, pos) == 5 && (lightOnly ? isLightSource(world, pos) : isAmethystNearby(world, pos))) {
                         hits.add(pos.toImmutable());
                     }
                 }
@@ -300,6 +309,17 @@ public class DFizClusterFinder extends Module {
             flaggedChunks.remove(cp);
             notifiedChunks.remove(cp);
         }
+    }
+
+    private static boolean isLightSource(ClientWorld world, BlockPos center) {
+        BlockPos.Mutable pos = new BlockPos.Mutable();
+
+        for (Direction dir : Direction.values()) {
+            pos.set(center.getX() + dir.getOffsetX(), center.getY() + dir.getOffsetY(), center.getZ() + dir.getOffsetZ());
+            if (world.getLightLevel(LightType.BLOCK, pos) > 5) return false;
+        }
+
+        return true;
     }
 
     private static boolean isAmethystNearby(ClientWorld world, BlockPos center) {
@@ -396,4 +416,4 @@ public class DFizClusterFinder extends Module {
 
         return nearest;
     }
-}
+             }
