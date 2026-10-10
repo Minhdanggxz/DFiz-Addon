@@ -1,6 +1,8 @@
 package com.nnpg.dfizaddon;
 
 import com.nnpg.dfizaddon.modules.esp.BedrockVoidESP;
+import com.nnpg.dfizaddon.modules.esp.DFizPlayerEsp;
+import com.nnpg.dfizaddon.modules.esp.DFizStorageEsp;
 import com.nnpg.dfizaddon.modules.esp.RegionMap;
 import com.nnpg.dfizaddon.modules.esp.SpawnerBeam;
 import com.nnpg.dfizaddon.modules.esp.SusChunkFinder;
@@ -12,7 +14,7 @@ import meteordevelopment.meteorclient.systems.modules.Category;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 
 public class DFizAddon extends MeteorAddon {
-    public static final Category CATEGORY = new Category("DFiz Addon");
+    public static final Category CATEGORY = new Category("Glazed");
 
     public static final Category esp = CATEGORY;
 
@@ -25,6 +27,8 @@ public class DFizAddon extends MeteorAddon {
         Modules.get().add(new RegionMap());
         Modules.get().add(new SusChunkFinder());
         Modules.get().add(new SpawnerBeam());
+        Modules.get().add(new DFizStorageEsp());
+        Modules.get().add(new DFizPlayerEsp());
     }
 
     @Override
