@@ -4,22 +4,18 @@ import com.nnpg.dfizaddon.DFizAddon;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.renderer.ShapeMode;
-import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.EnumSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.world.LightType;
-import net.minecraft.world.chunk.ChunkSection;
 import net.minecraft.world.chunk.WorldChunk;
 
 import java.util.ArrayList;
@@ -35,12 +31,18 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class DFizSusChunks extends Module {
     private static final long CHUNK_RESCAN_MS = 3000L;
     private static final long SCAN_TICK_MS = 200L;
-    private static final long EXPOSED_SCAN_MS = 1000L;
     private static final int MAX_CHUNKS_PER_SCAN = 6;
+    private static final int MIN_Y = -64;
+    private static final int MAX_Y = 50;
     private static final double PLATE_Y = 60.0;
 
+    public enum LightMode {
+        Light5,
+        Light4,
+        Both
+    }
+
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
-    private final SettingGroup sgRender = settings.createGroup("Render");
 
     private final Setting<Integer> simulationDistance = sgGeneral.add(new IntSetting.Builder()
         .name("simulation-distance")
@@ -53,35 +55,21 @@ public class DFizSusChunks extends Module {
 
     private final Setting<Integer> sensitivity = sgGeneral.add(new IntSetting.Builder()
         .name("sensitivity")
-        .description("Higher = more hits needed in a chunk before it is marked.")
+        .description("Higher = more light cells needed in a chunk before it is marked.")
         .defaultValue(5)
         .min(1)
         .sliderRange(1, 20)
         .build()
     );
 
-    private final Setting<Boolean> debug = sgGeneral.add(new BoolSetting.Builder()
-        .name("debug")
-        .description("Print scan results in chat every 3 seconds.")
-        .defaultValue(false)
+    private final Setting<LightMode> lightMode = sgGeneral.add(new EnumSetting.Builder<LightMode>()
+        .name("light-mode")
+        .description("Light5: the clusters themselves (you must be close). Light4: the cells around hidden clusters. Both: use both.")
+        .defaultValue(LightMode.Both)
         .build()
     );
 
-    private final Setting<Boolean> lightOnlyMode = sgGeneral.add(new BoolSetting.Builder()
-        .name("light-only")
-        .description("Find clusters from block light only. Use this when the server hides the amethyst blocks.")
-        .defaultValue(true)
-        .build()
-    );
-
-    private final Setting<Boolean> rememberChunks = sgGeneral.add(new BoolSetting.Builder()
-        .name("remember-chunks")
-        .description("Keep marked chunks after you walk away. They are cleared when you leave the world or turn the module off.")
-        .defaultValue(true)
-        .build()
-    );
-
-    private final Setting<Integer> alpha = sgRender.add(new IntSetting.Builder()
+    private final Setting<Integer> alpha = sgGeneral.add(new IntSetting.Builder()
         .name("alpha")
         .description("Opacity of the plates.")
         .defaultValue(100)
@@ -90,29 +78,15 @@ public class DFizSusChunks extends Module {
         .build()
     );
 
-    private final Setting<Boolean> showExposedAmethyst = sgRender.add(new BoolSetting.Builder()
-        .name("show-exposed-amethyst")
-        .description("Highlight amethyst blocks that touch air.")
-        .defaultValue(true)
-        .build()
-    );
-
     private final Set<ChunkPos> susChunks = ConcurrentHashMap.newKeySet();
     private final Map<ChunkPos, Long> lastScanAt = new ConcurrentHashMap<>();
-    private final Set<BlockPos> exposedPositions = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean scanRunning = new AtomicBoolean(false);
     private ExecutorService executor;
     private long lastScheduleMs;
-    private long lastExposedScanMs;
-    private long lastDebugMs;
     private Object lastWorld;
-    private volatile int dbgScanned;
-    private volatile int dbgBest;
-    private volatile int dbgLit5;
-    private volatile String dbgError = "none";
 
     public DFizSusChunks() {
-        super(DFizAddon.CATEGORY, "dfiz-sus-chunks", "Marks chunks with a lot of amethyst around the surface-level geodes.");
+        super(DFizAddon.CATEGORY, "dfiz-sus-chunks", "Marks chunks that have amethyst clusters, found from block light.");
     }
 
     @Override
@@ -135,18 +109,16 @@ public class DFizSusChunks extends Module {
         clear();
     }
 
+    @Override
+    public String getInfoString() {
+        return String.valueOf(susChunks.size());
+    }
+
     private void clear() {
         susChunks.clear();
         lastScanAt.clear();
-        exposedPositions.clear();
         lastScheduleMs = 0L;
-        lastExposedScanMs = 0L;
-        lastDebugMs = 0L;
         lastWorld = null;
-        dbgScanned = 0;
-        dbgBest = 0;
-        dbgLit5 = 0;
-        dbgError = "none";
     }
 
     @EventHandler
@@ -157,7 +129,6 @@ public class DFizSusChunks extends Module {
             if (lastWorld != null) {
                 susChunks.clear();
                 lastScanAt.clear();
-                exposedPositions.clear();
             }
             lastWorld = mc.world;
         }
@@ -165,27 +136,9 @@ public class DFizSusChunks extends Module {
         int simDist = simulationDistance.get();
         ChunkPos playerChunk = new ChunkPos(mc.player.getBlockPos());
 
-        if (!rememberChunks.get()) {
-            susChunks.removeIf(pos -> Math.abs(pos.x - playerChunk.x) > simDist + 1 || Math.abs(pos.z - playerChunk.z) > simDist + 1);
-        }
         lastScanAt.keySet().removeIf(pos -> Math.abs(pos.x - playerChunk.x) > simDist + 2 || Math.abs(pos.z - playerChunk.z) > simDist + 2);
-        exposedPositions.removeIf(bp -> Math.abs((bp.getX() >> 4) - playerChunk.x) > simDist + 1
-            || Math.abs((bp.getZ() >> 4) - playerChunk.z) > simDist + 1);
 
         scheduleScan(playerChunk, simDist);
-
-        if (debug.get()) {
-            long now = System.currentTimeMillis();
-            if (now - lastDebugMs >= 3000L) {
-                lastDebugMs = now;
-                info("chunks=%d best-hits=%d need>=%d lit5=%d sus=%d exposed=%d err=%s",
-                    dbgScanned, dbgBest, Math.max(1, sensitivity.get()) * 2, dbgLit5, susChunks.size(), exposedPositions.size(), dbgError);
-                dbgScanned = 0;
-                dbgBest = 0;
-                dbgLit5 = 0;
-                dbgError = "none";
-            }
-        }
     }
 
     private void scheduleScan(ChunkPos playerChunk, int simDist) {
@@ -194,8 +147,6 @@ public class DFizSusChunks extends Module {
         lastScheduleMs = now;
 
         ClientWorld world = mc.world;
-        boolean remember = rememberChunks.get();
-        boolean lightOnly = lightOnlyMode.get();
         List<ChunkPos> candidates = new ArrayList<>();
 
         for (int cx = playerChunk.x - simDist; cx <= playerChunk.x + simDist; cx++) {
@@ -203,7 +154,7 @@ public class DFizSusChunks extends Module {
                 if (!world.getChunkManager().isChunkLoaded(cx, cz)) continue;
 
                 ChunkPos chunkPos = new ChunkPos(cx, cz);
-                if (remember && susChunks.contains(chunkPos)) continue;
+                if (susChunks.contains(chunkPos)) continue;
 
                 long last = lastScanAt.getOrDefault(chunkPos, 0L);
                 if (last == 0L || now - last >= CHUNK_RESCAN_MS) candidates.add(chunkPos);
@@ -212,225 +163,84 @@ public class DFizSusChunks extends Module {
 
         if (candidates.isEmpty()) return;
 
-        int clusterThreshold = Math.max(1, sensitivity.get()) * 2;
-        boolean exposedOn = showExposedAmethyst.get();
+        int needed = Math.max(1, sensitivity.get()) * 6;
+        LightMode mode = lightMode.get();
 
         scanRunning.set(true);
         executor.execute(() -> {
             try {
-                if (exposedOn) {
-                    try {
-                        scanExposedAmethyst(world, playerChunk, simDist);
-                    } catch (Throwable t) {
-                        dbgError = "exposed: " + t;
-                    }
-                }
-
-                int scanCount = 0;
+                int scanned = 0;
                 for (ChunkPos chunkPos : candidates) {
-                    if (scanCount >= MAX_CHUNKS_PER_SCAN) break;
+                    if (scanned >= MAX_CHUNKS_PER_SCAN) break;
 
                     WorldChunk chunk = world.getChunkManager().getWorldChunk(chunkPos.x, chunkPos.z);
                     if (chunk == null) continue;
 
-                    int[] result;
-                    try {
-                        result = countClusterHits(world, chunk, -64, 50, lightOnly);
-                    } catch (Throwable t) {
-                        dbgError = "scan: " + t;
-                        lastScanAt.put(chunkPos, System.currentTimeMillis());
-                        continue;
-                    }
-
-                    dbgScanned++;
-                    dbgLit5 += result[0];
-                    dbgBest = Math.max(dbgBest, result[1]);
-
-                    if (result[1] >= clusterThreshold) {
-                        susChunks.add(chunkPos);
-                    } else if (!remember) {
-                        susChunks.remove(chunkPos);
-                    }
+                    if (score(world, chunk, mode) >= needed) susChunks.add(chunkPos);
 
                     lastScanAt.put(chunkPos, System.currentTimeMillis());
-                    scanCount++;
+                    scanned++;
                 }
-            } catch (Throwable t) {
-                dbgError = "task: " + t;
+            } catch (Throwable ignored) {
             } finally {
                 scanRunning.set(false);
             }
         });
     }
 
-    private void scanExposedAmethyst(ClientWorld world, ChunkPos playerChunk, int simDist) {
-        long now = System.currentTimeMillis();
-        if (now - lastExposedScanMs < EXPOSED_SCAN_MS) return;
-        lastExposedScanMs = now;
-
-        for (int cx = playerChunk.x - simDist; cx <= playerChunk.x + simDist; cx++) {
-            for (int cz = playerChunk.z - simDist; cz <= playerChunk.z + simDist; cz++) {
-                if (!world.getChunkManager().isChunkLoaded(cx, cz)) continue;
-
-                WorldChunk chunk = world.getChunkManager().getWorldChunk(cx, cz);
-                if (chunk == null) continue;
-
-                int finalCx = cx;
-                int finalCz = cz;
-                exposedPositions.removeIf(bp -> (bp.getX() >> 4) == finalCx && (bp.getZ() >> 4) == finalCz);
-                collectExposedAmethyst(world, chunk, -64, 128);
-            }
-        }
-    }
-
-    private void collectExposedAmethyst(ClientWorld world, WorldChunk chunk, int minY, int maxY) {
-        WorldChunk chunkNorth = world.getChunk(chunk.getPos().x, chunk.getPos().z - 1);
-        WorldChunk chunkSouth = world.getChunk(chunk.getPos().x, chunk.getPos().z + 1);
-        WorldChunk chunkWest = world.getChunk(chunk.getPos().x - 1, chunk.getPos().z);
-        WorldChunk chunkEast = world.getChunk(chunk.getPos().x + 1, chunk.getPos().z);
-        int bottomY = world.getBottomY();
-        ChunkSection[] sections = chunk.getSectionArray();
-
-        for (int si = 0; si < sections.length; si++) {
-            ChunkSection section = sections[si];
-            if (section == null || section.isEmpty()) continue;
-
-            int sectionBaseY = bottomY + si * 16;
-            if (sectionBaseY + 15 < minY || sectionBaseY > maxY) continue;
-            if (!section.hasAny(state -> isAmethystCandidate(state.getBlock()))) continue;
-
-            for (int lx = 0; lx < 16; lx++) {
-                for (int lz = 0; lz < 16; lz++) {
-                    for (int ly = 0; ly < 16; ly++) {
-                        int worldY = sectionBaseY + ly;
-                        if (worldY < minY || worldY > maxY) continue;
-
-                        Block block = section.getBlockState(lx, ly, lz).getBlock();
-                        if (isAmethystCandidate(block)
-                            && hasAirFace(sections, chunkNorth, chunkSouth, chunkWest, chunkEast, lx, ly, lz, si, worldY, bottomY)) {
-                            exposedPositions.add(new BlockPos(lx + chunk.getPos().getStartX(), worldY, lz + chunk.getPos().getStartZ()));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private static boolean hasAirFace(ChunkSection[] sections, WorldChunk cn, WorldChunk cs, WorldChunk cw, WorldChunk ce,
-                                      int lx, int ly, int lz, int si, int wy, int by) {
-        if (ly > 0) {
-            if (sections[si].getBlockState(lx, ly - 1, lz).isAir()) return true;
-        } else if (si > 0 && sections[si - 1] != null && sections[si - 1].getBlockState(lx, 15, lz).isAir()) {
-            return true;
-        }
-
-        if (ly < 15) {
-            if (sections[si].getBlockState(lx, ly + 1, lz).isAir()) return true;
-        } else if (si < sections.length - 1 && sections[si + 1] != null && sections[si + 1].getBlockState(lx, 0, lz).isAir()) {
-            return true;
-        }
-
-        if (lz > 0) {
-            if (sections[si].getBlockState(lx, ly, lz - 1).isAir()) return true;
-        } else if (cn != null && getStateInChunk(cn, lx, wy, 15, by).isAir()) {
-            return true;
-        }
-
-        if (lz < 15) {
-            if (sections[si].getBlockState(lx, ly, lz + 1).isAir()) return true;
-        } else if (cs != null && getStateInChunk(cs, lx, wy, 0, by).isAir()) {
-            return true;
-        }
-
-        if (lx > 0) {
-            if (sections[si].getBlockState(lx - 1, ly, lz).isAir()) return true;
-        } else if (cw != null && getStateInChunk(cw, 15, wy, lz, by).isAir()) {
-            return true;
-        }
-
-        if (lx < 15) {
-            if (sections[si].getBlockState(lx + 1, ly, lz).isAir()) return true;
-        } else if (ce != null && getStateInChunk(ce, 0, wy, lz, by).isAir()) {
-            return true;
-        }
-
-        return false;
-    }
-
-    private static BlockState getStateInChunk(WorldChunk neighbour, int lx, int worldY, int lz, int bottomY) {
-        int sectionIndex = (worldY - bottomY) >> 4;
-        int localY = (worldY - bottomY) & 15;
-        ChunkSection[] secs = neighbour.getSectionArray();
-
-        if (sectionIndex >= 0 && sectionIndex < secs.length && secs[sectionIndex] != null) {
-            return secs[sectionIndex].getBlockState(lx, localY, lz);
-        }
-        return Blocks.AIR.getDefaultState();
-    }
-
-    private static boolean isAmethystCandidate(Block b) {
-        return b == Blocks.AMETHYST_BLOCK || b == Blocks.BUDDING_AMETHYST || b == Blocks.AMETHYST_CLUSTER;
-    }
-
-    private static int[] countClusterHits(ClientWorld world, WorldChunk chunk, int minY, int maxY, boolean lightOnly) {
-        int lit5 = 0;
-        int hits = 0;
+    private static int score(ClientWorld world, WorldChunk chunk, LightMode mode) {
+        boolean use5 = mode != LightMode.Light4;
+        boolean use4 = mode != LightMode.Light5;
+        int hits5 = 0;
+        int hits4 = 0;
         int baseX = chunk.getPos().x << 4;
         int baseZ = chunk.getPos().z << 4;
-        int topY = Math.min(maxY, 50);
         BlockPos.Mutable pos = new BlockPos.Mutable();
-        BlockPos.Mutable neighbor = new BlockPos.Mutable();
+        BlockPos.Mutable near = new BlockPos.Mutable();
 
-        for (int y = minY; y <= topY; y++) {
+        for (int y = MIN_Y; y <= MAX_Y; y++) {
             for (int lx = 0; lx < 16; lx++) {
                 for (int lz = 0; lz < 16; lz++) {
                     pos.set(baseX + lx, y, baseZ + lz);
-                    if (world.getLightLevel(LightType.BLOCK, pos) == 5) {
-                        lit5++;
-                        if (lightOnly ? isLightSource(world, pos) : hasNearbyAmethyst(world, pos, neighbor)) hits++;
+                    int light = world.getLightLevel(LightType.BLOCK, pos);
+
+                    if (light == 5) {
+                        if (use5 && isSource(world, pos, near)) hits5++;
+                    } else if (light == 4) {
+                        if (use4 && lx > 0 && lx < 15 && lz > 0 && lz < 15 && isHiddenGlow(world, pos, near)) hits4++;
                     }
                 }
             }
         }
 
-        return new int[]{lit5, hits};
+        return hits5 * 3 + hits4;
     }
 
-    private static boolean isLightSource(ClientWorld world, BlockPos center) {
-        BlockPos.Mutable pos = new BlockPos.Mutable();
-
+    private static boolean isSource(ClientWorld world, BlockPos center, BlockPos.Mutable near) {
         for (Direction dir : Direction.values()) {
-            pos.set(center.getX() + dir.getOffsetX(), center.getY() + dir.getOffsetY(), center.getZ() + dir.getOffsetZ());
-            if (world.getLightLevel(LightType.BLOCK, pos) > 5) return false;
+            near.set(center.getX() + dir.getOffsetX(), center.getY() + dir.getOffsetY(), center.getZ() + dir.getOffsetZ());
+            if (world.getLightLevel(LightType.BLOCK, near) > 5) return false;
         }
 
         return true;
     }
 
-    private static boolean hasNearbyAmethyst(ClientWorld world, BlockPos center, BlockPos.Mutable neighbor) {
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dy = -1; dy <= 1; dy++) {
-                for (int dz = -1; dz <= 1; dz++) {
-                    neighbor.set(center.getX() + dx, center.getY() + dy, center.getZ() + dz);
-                    BlockState state = world.getBlockState(neighbor);
-                    if (state.isOf(Blocks.AMETHYST_CLUSTER)
-                        || state.isOf(Blocks.LARGE_AMETHYST_BUD)
-                        || state.isOf(Blocks.MEDIUM_AMETHYST_BUD)
-                        || state.isOf(Blocks.SMALL_AMETHYST_BUD)
-                        || state.isOf(Blocks.BUDDING_AMETHYST)
-                        || state.isOf(Blocks.AMETHYST_BLOCK)) {
-                        return true;
-                    }
-                }
-            }
+    private static boolean isHiddenGlow(ClientWorld world, BlockPos center, BlockPos.Mutable near) {
+        boolean touchesDark = false;
+
+        for (Direction dir : Direction.values()) {
+            near.set(center.getX() + dir.getOffsetX(), center.getY() + dir.getOffsetY(), center.getZ() + dir.getOffsetZ());
+            int light = world.getLightLevel(LightType.BLOCK, near);
+            if (light > 4) return false;
+            if (light == 0) touchesDark = true;
         }
 
-        return false;
+        return touchesDark;
     }
 
     @EventHandler
     private void onRender3D(Render3DEvent event) {
-        if (susChunks.isEmpty() && exposedPositions.isEmpty()) return;
+        if (susChunks.isEmpty()) return;
 
         int a = Math.max(50, Math.min(170, alpha.get()));
         Color fill = new Color(255, 30, 30, a);
@@ -457,14 +267,6 @@ public class DFizSusChunks extends Module {
             event.renderer.box(chunkPos.getStartX() - 0.05, PLATE_Y, chunkPos.getStartZ() - 0.05,
                 chunkPos.getStartX() + 16.05, PLATE_Y + 0.1, chunkPos.getStartZ() + 16.05,
                 fill, fill, ShapeMode.Sides, 0);
-        }
-
-        if (showExposedAmethyst.get()) {
-            Color orange = new Color(255, 165, 0, Math.max(0, Math.min(255, alpha.get())));
-            for (BlockPos bp : exposedPositions) {
-                event.renderer.box(bp.getX(), bp.getY(), bp.getZ(), bp.getX() + 1, bp.getY() + 1, bp.getZ() + 1,
-                    orange, orange, ShapeMode.Sides, 0);
-            }
         }
     }
 }
