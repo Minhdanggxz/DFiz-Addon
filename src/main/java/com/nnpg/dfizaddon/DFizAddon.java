@@ -14,7 +14,7 @@ import meteordevelopment.meteorclient.systems.modules.Category;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 
 public class DFizAddon extends MeteorAddon {
-    public static final Category CATEGORY = new Category("Glazed");
+    public static final Category CATEGORY = new Category("DFiz Addon");
 
     public static final Category esp = CATEGORY;
 
