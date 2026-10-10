@@ -61,12 +61,21 @@ public class SusChunkFinder extends Module {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgRender = settings.createGroup("Render");
 
-    private final Setting<Integer> glowCellThreshold = sgGeneral.add(new IntSetting.Builder()
-        .name("glow-cell-threshold")
-        .description("Number of glowing cells needed to count a geode as sus.")
-        .defaultValue(36)
-        .min(1)
-        .sliderRange(1, 200)
+    private final Setting<Integer> simulationDistance = sgGeneral.add(new IntSetting.Builder()
+        .name("simulation-distance")
+        .description("Scan radius, multiplied by 2 (4 = 8 chunks). It can't go above your render distance.")
+        .defaultValue(4)
+        .range(1, 16)
+        .sliderRange(1, 16)
+        .build()
+    );
+
+    private final Setting<Integer> sensitivity = sgGeneral.add(new IntSetting.Builder()
+        .name("sensitivity")
+        .description("Glowing cells needed to count a geode as sus, multiplied by 10 (4 = 40 cells). Higher = stricter.")
+        .defaultValue(4)
+        .range(1, 20)
+        .sliderRange(1, 20)
         .build()
     );
 
@@ -171,6 +180,26 @@ public class SusChunkFinder extends Module {
         .build()
     );
 
+    private final Setting<Double> chunkSize = sgRender.add(new DoubleSetting.Builder()
+        .name("chunk-size")
+        .description("Size of the chunk plane. 1 = the whole chunk, 0.5 = half, 2 = twice as big.")
+        .defaultValue(1.0)
+        .min(0.1)
+        .sliderRange(0.1, 4.0)
+        .visible(showChunkPlane::get)
+        .build()
+    );
+
+    private final Setting<Integer> chunkAlpha = sgRender.add(new IntSetting.Builder()
+        .name("chunk-alpha")
+        .description("Opacity of the chunk plane fill.")
+        .defaultValue(70)
+        .range(0, 255)
+        .sliderRange(0, 255)
+        .visible(showChunkPlane::get)
+        .build()
+    );
+
     private static final Predicate<BlockState> GROWN = s ->
         s.isOf(Blocks.AMETHYST_CLUSTER) || (COUNT_LARGE_BUDS && s.isOf(Blocks.LARGE_AMETHYST_BUD));
     private static final Predicate<BlockState> SHELL = s ->
@@ -247,10 +276,10 @@ public class SusChunkFinder extends Module {
 
     private void scan() {
         ClientWorld world = mc.world;
-        int radius = mc.options.getClampedViewDistance();
+        int radius = Math.min(mc.options.getClampedViewDistance(), simulationDistance.get() * 2);
         ChunkPos center = mc.player.getChunkPos();
         int bottomY = world.getBottomY();
-        int glowThreshold = glowCellThreshold.get();
+        int glowThreshold = sensitivity.get() * 10;
         boolean dbg = debug.get();
 
         Map<Long, ChunkData> data = new HashMap<>();
@@ -451,7 +480,7 @@ public class SusChunkFinder extends Module {
         int[] strongCol = rgba(strongColor.get());
         int[] plainCol = rgba(plainColor.get());
         SettingColor pc = planeColor.get();
-        int[] planeFill = new int[]{pc.r, pc.g, pc.b, 70};
+        int[] planeFill = new int[]{pc.r, pc.g, pc.b, chunkAlpha.get()};
         int[] planeEdge = new int[]{pc.r, pc.g, pc.b, pc.a};
         float outer = starSize.get().floatValue();
 
@@ -483,10 +512,13 @@ public class SusChunkFinder extends Module {
             if (plane || star) {
                 int chX = Math.floorDiv(h.x, 16) * 16;
                 int chZ = Math.floorDiv(h.z, 16) * 16;
-                float px0 = (float) (chX - cam.x);
-                float px1 = (float) (chX + 16 - cam.x);
-                float pz0 = (float) (chZ - cam.z);
-                float pz1 = (float) (chZ + 16 - cam.z);
+                float half = 8f * chunkSize.get().floatValue();
+                float pcx = (float) (chX + 8 - cam.x);
+                float pcz = (float) (chZ + 8 - cam.z);
+                float px0 = pcx - half;
+                float px1 = pcx + half;
+                float pz0 = pcz - half;
+                float pz1 = pcz + half;
                 float py = (float) (h.planeY - cam.y);
                 float t = 0.25f;
 
