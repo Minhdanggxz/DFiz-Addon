@@ -59,6 +59,13 @@ public class DFizSusChunks extends Module {
         .build()
     );
 
+    private final Setting<Boolean> debug = sgGeneral.add(new BoolSetting.Builder()
+        .name("debug")
+        .description("Print scan results in chat every 3 seconds.")
+        .defaultValue(false)
+        .build()
+    );
+
     private final Setting<Integer> alpha = sgRender.add(new IntSetting.Builder()
         .name("alpha")
         .description("Opacity of the plates.")
@@ -82,6 +89,11 @@ public class DFizSusChunks extends Module {
     private ExecutorService executor;
     private long lastScheduleMs;
     private long lastExposedScanMs;
+    private long lastDebugMs;
+    private volatile int dbgScanned;
+    private volatile int dbgBest;
+    private volatile int dbgLit5;
+    private volatile String dbgError = "none";
 
     public DFizSusChunks() {
         super(DFizAddon.CATEGORY, "dfiz-sus-chunks", "Marks chunks with a lot of amethyst around the surface-level geodes.");
@@ -113,6 +125,11 @@ public class DFizSusChunks extends Module {
         exposedPositions.clear();
         lastScheduleMs = 0L;
         lastExposedScanMs = 0L;
+        lastDebugMs = 0L;
+        dbgScanned = 0;
+        dbgBest = 0;
+        dbgLit5 = 0;
+        dbgError = "none";
     }
 
     @EventHandler
@@ -128,6 +145,19 @@ public class DFizSusChunks extends Module {
             || Math.abs((bp.getZ() >> 4) - playerChunk.z) > simDist + 1);
 
         scheduleScan(playerChunk, simDist);
+
+        if (debug.get()) {
+            long now = System.currentTimeMillis();
+            if (now - lastDebugMs >= 3000L) {
+                lastDebugMs = now;
+                info("chunks=%d best-hits=%d need>=%d lit5=%d sus=%d exposed=%d err=%s",
+                    dbgScanned, dbgBest, Math.max(1, sensitivity.get()) * 2, dbgLit5, susChunks.size(), exposedPositions.size(), dbgError);
+                dbgScanned = 0;
+                dbgBest = 0;
+                dbgLit5 = 0;
+                dbgError = "none";
+            }
+        }
     }
 
     private void scheduleScan(ChunkPos playerChunk, int simDist) {
@@ -156,7 +186,13 @@ public class DFizSusChunks extends Module {
         scanRunning.set(true);
         executor.execute(() -> {
             try {
-                if (exposedOn) scanExposedAmethyst(world, playerChunk, simDist);
+                if (exposedOn) {
+                    try {
+                        scanExposedAmethyst(world, playerChunk, simDist);
+                    } catch (Throwable t) {
+                        dbgError = "exposed: " + t;
+                    }
+                }
 
                 int scanCount = 0;
                 for (ChunkPos chunkPos : candidates) {
@@ -165,8 +201,20 @@ public class DFizSusChunks extends Module {
                     WorldChunk chunk = world.getChunkManager().getWorldChunk(chunkPos.x, chunkPos.z);
                     if (chunk == null) continue;
 
-                    int clusters = countClusterHits(world, chunk, -64, 50);
-                    if (clusters >= clusterThreshold) {
+                    int[] result;
+                    try {
+                        result = countClusterHits(world, chunk, -64, 50);
+                    } catch (Throwable t) {
+                        dbgError = "scan: " + t;
+                        lastScanAt.put(chunkPos, System.currentTimeMillis());
+                        continue;
+                    }
+
+                    dbgScanned++;
+                    dbgLit5 += result[0];
+                    dbgBest = Math.max(dbgBest, result[1]);
+
+                    if (result[1] >= clusterThreshold) {
                         susChunks.add(chunkPos);
                     } else {
                         susChunks.remove(chunkPos);
@@ -175,7 +223,8 @@ public class DFizSusChunks extends Module {
                     lastScanAt.put(chunkPos, System.currentTimeMillis());
                     scanCount++;
                 }
-            } catch (Exception ignored) {
+            } catch (Throwable t) {
+                dbgError = "task: " + t;
             } finally {
                 scanRunning.set(false);
             }
@@ -291,8 +340,9 @@ public class DFizSusChunks extends Module {
         return b == Blocks.AMETHYST_BLOCK || b == Blocks.BUDDING_AMETHYST || b == Blocks.AMETHYST_CLUSTER;
     }
 
-    private static int countClusterHits(ClientWorld world, WorldChunk chunk, int minY, int maxY) {
-        int count = 0;
+    private static int[] countClusterHits(ClientWorld world, WorldChunk chunk, int minY, int maxY) {
+        int lit5 = 0;
+        int hits = 0;
         int baseX = chunk.getPos().x << 4;
         int baseZ = chunk.getPos().z << 4;
         int topY = Math.min(maxY, 50);
@@ -303,12 +353,15 @@ public class DFizSusChunks extends Module {
             for (int lx = 0; lx < 16; lx++) {
                 for (int lz = 0; lz < 16; lz++) {
                     pos.set(baseX + lx, y, baseZ + lz);
-                    if (world.getLightLevel(LightType.BLOCK, pos) == 5 && hasNearbyAmethyst(world, pos, neighbor)) count++;
+                    if (world.getLightLevel(LightType.BLOCK, pos) == 5) {
+                        lit5++;
+                        if (hasNearbyAmethyst(world, pos, neighbor)) hits++;
+                    }
                 }
             }
         }
 
-        return count;
+        return new int[]{lit5, hits};
     }
 
     private static boolean hasNearbyAmethyst(ClientWorld world, BlockPos center, BlockPos.Mutable neighbor) {
@@ -371,4 +424,5 @@ public class DFizSusChunks extends Module {
             }
         }
     }
-}
+             }
+                                   
