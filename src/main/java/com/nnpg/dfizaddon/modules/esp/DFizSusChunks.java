@@ -64,8 +64,8 @@ public class DFizSusChunks extends Module {
 
     private final Setting<LightMode> lightMode = sgGeneral.add(new EnumSetting.Builder<LightMode>()
         .name("light-mode")
-        .description("Light5: the clusters themselves (you must be close). Light4: the cells around hidden clusters. Both: use both.")
-        .defaultValue(LightMode.Both)
+        .description("Light5: cells with light 5 (the clusters, only when you are close). Light4: cells with light 4 (the air around clusters). Both: use both.")
+        .defaultValue(LightMode.Light4)
         .build()
     );
 
@@ -207,7 +207,7 @@ public class DFizSusChunks extends Module {
                     if (light == 5) {
                         if (use5 && isSource(world, pos, near)) hits5++;
                     } else if (light == 4) {
-                        if (use4 && lx > 0 && lx < 15 && lz > 0 && lz < 15 && isHiddenGlow(world, pos, near)) hits4++;
+                        if (use4 && lx > 0 && lx < 15 && lz > 0 && lz < 15 && isGlowCell(world, pos, near)) hits4++;
                     }
                 }
             }
@@ -225,17 +225,13 @@ public class DFizSusChunks extends Module {
         return true;
     }
 
-    private static boolean isHiddenGlow(ClientWorld world, BlockPos center, BlockPos.Mutable near) {
-        boolean touchesDark = false;
-
+    private static boolean isGlowCell(ClientWorld world, BlockPos center, BlockPos.Mutable near) {
         for (Direction dir : Direction.values()) {
             near.set(center.getX() + dir.getOffsetX(), center.getY() + dir.getOffsetY(), center.getZ() + dir.getOffsetZ());
-            int light = world.getLightLevel(LightType.BLOCK, near);
-            if (light > 4) return false;
-            if (light == 0) touchesDark = true;
+            if (world.getLightLevel(LightType.BLOCK, near) > 4) return false;
         }
 
-        return touchesDark;
+        return true;
     }
 
     @EventHandler
