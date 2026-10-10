@@ -1,11 +1,9 @@
 package com.nnpg.dfizaddon;
 
 import com.nnpg.dfizaddon.modules.esp.BedrockVoidESP;
-import com.nnpg.dfizaddon.modules.esp.DFizClusterFinder;
 import com.nnpg.dfizaddon.modules.esp.DFizHoleEsp;
 import com.nnpg.dfizaddon.modules.esp.DFizPlayerEsp;
 import com.nnpg.dfizaddon.modules.esp.DFizStorageEsp;
-import com.nnpg.dfizaddon.modules.esp.DFizSusChunks;
 import com.nnpg.dfizaddon.modules.esp.RegionMap;
 import com.nnpg.dfizaddon.modules.esp.SpawnerBeam;
 import com.nnpg.dfizaddon.modules.esp.SusChunkFinder;
@@ -33,8 +31,6 @@ public class DFizAddon extends MeteorAddon {
         Modules.get().add(new DFizStorageEsp());
         Modules.get().add(new DFizPlayerEsp());
         Modules.get().add(new DFizHoleEsp());
-        Modules.get().add(new DFizClusterFinder());
-        Modules.get().add(new DFizSusChunks());
     }
 
     @Override
