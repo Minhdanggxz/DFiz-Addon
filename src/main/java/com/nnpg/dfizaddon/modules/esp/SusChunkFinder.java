@@ -54,7 +54,6 @@ public class SusChunkFinder extends Module {
     private static final int THRESHOLD = 13;
     private static final boolean COUNT_LARGE_BUDS = false;
     private static final int SCAN_INTERVAL_TICKS = 40;
-    private static final long DEBUG_INTERVAL_MS = 5000;
     private static final float HALF_WIDTH = 0.2f;
     private static final long RGB_CYCLE_MS = 3000L;
 
@@ -79,27 +78,6 @@ public class SusChunkFinder extends Module {
         .build()
     );
 
-    private final Setting<Boolean> showPlainGeodes = sgGeneral.add(new BoolSetting.Builder()
-        .name("show-plain-geodes")
-        .description("Also mark normal geodes (white beam).")
-        .defaultValue(false)
-        .build()
-    );
-
-    private final Setting<Boolean> alertChat = sgGeneral.add(new BoolSetting.Builder()
-        .name("alert-chat")
-        .description("Send a chat message when a sus chunk is found.")
-        .defaultValue(false)
-        .build()
-    );
-
-    private final Setting<Boolean> debug = sgGeneral.add(new BoolSetting.Builder()
-        .name("debug")
-        .description("Print scan debug info in chat.")
-        .defaultValue(false)
-        .build()
-    );
-
     private final Setting<Boolean> showBeam = sgRender.add(new BoolSetting.Builder()
         .name("show-beam")
         .description("Draw a vertical beam above the geode.")
@@ -112,14 +90,6 @@ public class SusChunkFinder extends Module {
         .description("Beam color for sus chunks.")
         .defaultValue(new SettingColor(200, 80, 255, 150))
         .visible(showBeam::get)
-        .build()
-    );
-
-    private final Setting<SettingColor> plainColor = sgRender.add(new ColorSetting.Builder()
-        .name("plain-beam-color")
-        .description("Beam color for plain geodes.")
-        .defaultValue(new SettingColor(255, 255, 255, 200))
-        .visible(() -> showBeam.get() && showPlainGeodes.get())
         .build()
     );
 
@@ -238,9 +208,7 @@ public class SusChunkFinder extends Module {
     }
 
     private Map<Long, Hit> hits = new HashMap<>();
-    private final Set<Long> alertedStrong = new HashSet<>();
     private int tickCounter = 0;
-    private long lastDebug = 0;
 
     public SusChunkFinder() {
         super(DFizAddon.CATEGORY, "sus-chunk-finder",
@@ -259,7 +227,6 @@ public class SusChunkFinder extends Module {
 
     private void reset() {
         hits = new HashMap<>();
-        alertedStrong.clear();
         tickCounter = 0;
     }
 
@@ -280,10 +247,8 @@ public class SusChunkFinder extends Module {
         ChunkPos center = mc.player.getChunkPos();
         int bottomY = world.getBottomY();
         int glowThreshold = sensitivity.get() * 10;
-        boolean dbg = debug.get();
 
         Map<Long, ChunkData> data = new HashMap<>();
-        int[] hist = new int[16];
 
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dz = -radius; dz <= radius; dz++) {
@@ -324,15 +289,13 @@ public class SusChunkFinder extends Module {
                 if (shell < MIN_SHELL_PER_CHUNK) continue;
 
                 BlockPos centre = new BlockPos((int) (sumX / shell), (int) (sumY / shell), (int) (sumZ / shell));
-                int lit = litCells(world, centre, hist, dbg);
+                int lit = litCells(world, centre);
                 data.put(ChunkPos.toLong(cx, cz), new ChunkData(cx, cz, shell, grown, lit, centre));
             }
         }
 
         Map<Long, Hit> found = new HashMap<>();
         Set<Long> visited = new HashSet<>();
-        int geodeGroups = 0, bestLit = 0;
-        List<String> debugGroups = new ArrayList<>();
 
         for (Map.Entry<Long, ChunkData> entry : data.entrySet()) {
             if (!visited.add(entry.getKey())) continue;
@@ -366,50 +329,15 @@ public class SusChunkFinder extends Module {
             }
 
             if (shell < GEODE_MIN_BLOCKS) continue;
-            geodeGroups++;
-            if (litMax > bestLit) bestLit = litMax;
-            debugGroups.add("[X=" + (int) (sx / n) + " Z=" + (int) (sz / n) + " l4=" + litMax + " cum=" + grown + "]");
 
             boolean strong = litMax > glowThreshold || grown > THRESHOLD;
-            if (!strong && !showPlainGeodes.get()) continue;
+            if (!strong) continue;
 
             int hx = (int) (sx / n), hy = (int) (sy / n), hz = (int) (sz / n);
             Hit h = new Hit(litMax, grown, hx, hy, hz, strong, (float) (surfaceY(world, hx, hz) + planeOffset.get()));
             found.put(entry.getKey(), h);
-
-            if (strong) {
-                boolean newStrong = true;
-                for (long k : members) {
-                    if (alertedStrong.contains(k)) {
-                        newStrong = false;
-                        break;
-                    }
-                }
-                if (newStrong) {
-                    alertedStrong.addAll(members);
-                    if (alertChat.get()) {
-                        info("Nhieu amethyst lon tai X=" + h.x + " Y=" + h.y + " Z=" + h.z
-                            + " (light 4: " + h.lit + ", thay " + h.grown + " cum)");
-                    }
-                }
-            }
         }
         hits = found;
-
-        if (dbg) {
-            long now = System.currentTimeMillis();
-            int totalShell = 0;
-            for (ChunkData c : data.values()) totalShell += c.shell;
-            if (totalShell > 0 && now - lastDebug > DEBUG_INTERVAL_MS) {
-                lastDebug = now;
-                StringBuilder groups = new StringBuilder();
-                for (int i = 0; i < debugGroups.size() && i < 4; i++) groups.append(' ').append(debugGroups.get(i));
-                info("debug: vo=" + totalShell + " hang=" + geodeGroups
-                    + " light4 cao nhat=" + bestLit + " (nguong " + glowThreshold + ") |" + groups
-                    + " | o theo muc sang: 0=" + hist[0] + " 1=" + hist[1] + " 2=" + hist[2] + " 3=" + hist[3]
-                    + " 4=" + hist[4] + " 5=" + hist[5]);
-            }
-        }
     }
 
     private static int surfaceY(ClientWorld world, int x, int z) {
@@ -425,7 +353,7 @@ public class SusChunkFinder extends Module {
         return best;
     }
 
-    private static int litCells(ClientWorld world, BlockPos centre, int[] hist, boolean dbg) {
+    private static int litCells(ClientWorld world, BlockPos centre) {
         int count = 0;
         BlockPos.Mutable cursor = new BlockPos.Mutable();
         BlockPos.Mutable neighbour = new BlockPos.Mutable();
@@ -436,7 +364,6 @@ public class SusChunkFinder extends Module {
                     cursor.set(centre.getX() + dx, centre.getY() + dy, centre.getZ() + dz);
 
                     int light = world.getLightLevel(LightType.BLOCK, cursor);
-                    if (dbg) hist[Math.max(0, Math.min(light, 15))]++;
                     if (light != GLOW_LIGHT) continue;
 
                     boolean artificial = false;
@@ -478,7 +405,6 @@ public class SusChunkFinder extends Module {
         float top = mc.world.getBottomY() + mc.world.getHeight();
 
         int[] strongCol = rgba(strongColor.get());
-        int[] plainCol = rgba(plainColor.get());
         SettingColor pc = planeColor.get();
         int[] planeFill = new int[]{pc.r, pc.g, pc.b, chunkAlpha.get()};
         int[] planeEdge = new int[]{pc.r, pc.g, pc.b, pc.a};
@@ -493,7 +419,7 @@ public class SusChunkFinder extends Module {
         BufferBuilder buf = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
 
         for (Hit h : new ArrayList<>(current.values())) {
-            int[] c = h.strong ? strongCol : plainCol;
+            int[] c = strongCol;
             float x0 = (float) (h.x + 0.5 - HALF_WIDTH - cam.x);
             float x1 = (float) (h.x + 0.5 + HALF_WIDTH - cam.x);
             float z0 = (float) (h.z + 0.5 - HALF_WIDTH - cam.z);
