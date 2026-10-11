@@ -142,6 +142,16 @@ public class SusChunkFinder extends Module {
         .build()
     );
 
+    private final Setting<Integer> maxWaterY = sgRender.add(new IntSetting.Builder()
+        .name("max-water-y")
+        .description("Where the plane sits on water, it never goes above this Y. Land is not limited.")
+        .defaultValue(70)
+        .range(-64, 320)
+        .sliderRange(-64, 320)
+        .visible(showChunkPlane::get)
+        .build()
+    );
+
     private final Setting<SettingColor> planeColor = sgRender.add(new ColorSetting.Builder()
         .name("plane-color")
         .description("Color of the chunk plane (alpha is used for the edge, fill is more transparent).")
@@ -334,19 +344,25 @@ public class SusChunkFinder extends Module {
             if (!strong) continue;
 
             int hx = (int) (sx / n), hy = (int) (sy / n), hz = (int) (sz / n);
-            Hit h = new Hit(litMax, grown, hx, hy, hz, strong, (float) (surfaceY(world, hx, hz) + planeOffset.get()));
+            Hit h = new Hit(litMax, grown, hx, hy, hz, strong, (float) (surfaceY(world, hx, hz, maxWaterY.get()) + planeOffset.get()));
             found.put(entry.getKey(), h);
         }
         hits = found;
     }
 
-    private static int surfaceY(ClientWorld world, int x, int z) {
+    private static int surfaceY(ClientWorld world, int x, int z, int maxWaterY) {
         int baseX = Math.floorDiv(x, 16) * 16;
         int baseZ = Math.floorDiv(z, 16) * 16;
-        int best = world.getBottomY();
+        int bottom = world.getBottomY();
+        int best = bottom;
+        BlockPos.Mutable pos = new BlockPos.Mutable();
         for (int ox = 0; ox < 16; ox += 3) {
             for (int oz = 0; oz < 16; oz += 3) {
-                int y = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, baseX + ox, baseZ + oz);
+                int px = baseX + ox;
+                int pz = baseZ + oz;
+                int y = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, px, pz);
+                boolean water = y > bottom && !world.getFluidState(pos.set(px, y - 1, pz)).isEmpty();
+                if (water) y = Math.min(y, maxWaterY);
                 if (y > best) best = y;
             }
         }
