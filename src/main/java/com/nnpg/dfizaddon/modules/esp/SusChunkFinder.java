@@ -2,6 +2,7 @@ package com.nnpg.dfizaddon.modules.esp;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.nnpg.dfizaddon.DFizAddon;
+import meteordevelopment.meteorclient.MeteorClient;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.BoolSetting;
@@ -10,6 +11,7 @@ import meteordevelopment.meteorclient.settings.DoubleSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringSetting;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
@@ -22,8 +24,11 @@ import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
+import net.minecraft.client.texture.NativeImage;
+import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.client.world.ClientWorld;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Direction;
@@ -34,6 +39,9 @@ import net.minecraft.world.chunk.ChunkSection;
 import net.minecraft.world.chunk.WorldChunk;
 import org.joml.Matrix4f;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -186,6 +194,39 @@ public class SusChunkFinder extends Module {
         s.isOf(Blocks.AMETHYST_BLOCK) || s.isOf(Blocks.BUDDING_AMETHYST);
     private static final Predicate<BlockState> ANY = GROWN.or(SHELL);
 
+    private final Setting<Boolean> useImage = sgRender.add(new BoolSetting.Builder()
+        .name("use-image")
+        .description("Draw your own image instead of the plain chunk plane.")
+        .defaultValue(false)
+        .visible(showChunkPlane::get)
+        .build()
+    );
+
+    private final Setting<String> imageFile = sgRender.add(new StringSetting.Builder()
+        .name("image-file")
+        .description("PNG file name inside the meteor-client/dfiz folder.")
+        .defaultValue("chunk.png")
+        .visible(() -> showChunkPlane.get() && useImage.get())
+        .build()
+    );
+
+    private final Setting<Integer> imageOpacity = sgRender.add(new IntSetting.Builder()
+        .name("image-opacity")
+        .description("Opacity of the image.")
+        .defaultValue(255)
+        .range(0, 255)
+        .sliderRange(0, 255)
+        .visible(() -> showChunkPlane.get() && useImage.get())
+        .build()
+    );
+
+    private static final Identifier IMAGE_ID = Identifier.of("dfizaddon", "chunk_image");
+
+    private NativeImageBackedTexture imageTexture;
+    private String loadedImage = "";
+    private long loadedImageStamp;
+    private long lastImageCheck;
+
     private static final class Hit {
         final int lit, grown, x, y, z;
         final float planeY;
@@ -233,6 +274,60 @@ public class SusChunkFinder extends Module {
     @Override
     public void onDeactivate() {
         reset();
+        releaseImage();
+    }
+
+    private boolean ensureImage() {
+        long now = System.currentTimeMillis();
+        if (imageTexture != null && now - lastImageCheck < 1000L) return true;
+        lastImageCheck = now;
+
+        String name = imageFile.get().trim();
+        if (name.isEmpty()) {
+            releaseImage();
+            return false;
+        }
+
+        File file = new File(new File(MeteorClient.FOLDER, "dfiz"), name);
+        if (!file.isFile()) {
+            releaseImage();
+            return false;
+        }
+
+        long stamp = file.lastModified();
+        if (imageTexture != null && name.equals(loadedImage) && stamp == loadedImageStamp) return true;
+
+        releaseImage();
+
+        try (InputStream in = new FileInputStream(file)) {
+            NativeImage image = NativeImage.read(in);
+            imageTexture = new NativeImageBackedTexture(image);
+            mc.getTextureManager().registerTexture(IMAGE_ID, imageTexture);
+            loadedImage = name;
+            loadedImageStamp = stamp;
+            return true;
+        } catch (Exception e) {
+            imageTexture = null;
+            loadedImage = "";
+            return false;
+        }
+    }
+
+    private void releaseImage() {
+        if (imageTexture != null) {
+            mc.getTextureManager().destroyTexture(IMAGE_ID);
+            imageTexture = null;
+        }
+        loadedImage = "";
+    }
+
+    private float[] planeRect(Hit h, Vec3d cam) {
+        int chX = Math.floorDiv(h.x, 16) * 16;
+        int chZ = Math.floorDiv(h.z, 16) * 16;
+        float half = 8f * chunkSize.get().floatValue();
+        float pcx = (float) (chX + 8 - cam.x);
+        float pcz = (float) (chZ + 8 - cam.z);
+        return new float[]{pcx - half, (float) (h.planeY - cam.y), pcz - half, pcx + half, pcz + half};
     }
 
     private void reset() {
@@ -430,6 +525,24 @@ public class SusChunkFinder extends Module {
         RenderSystem.defaultBlendFunc();
         RenderSystem.disableDepthTest();
         RenderSystem.disableCull();
+
+        boolean imageOn = plane && useImage.get() && ensureImage();
+        if (imageOn) {
+            int ia = imageOpacity.get();
+            RenderSystem.setShader(GameRenderer::getPositionTexColorProgram);
+            RenderSystem.setShaderTexture(0, IMAGE_ID);
+
+            BufferBuilder tex = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
+            for (Hit h : new ArrayList<>(current.values())) {
+                float[] r = planeRect(h, cam);
+                tex.vertex(m, r[0], r[1], r[2]).texture(0f, 0f).color(255, 255, 255, ia);
+                tex.vertex(m, r[3], r[1], r[2]).texture(1f, 0f).color(255, 255, 255, ia);
+                tex.vertex(m, r[3], r[1], r[4]).texture(1f, 1f).color(255, 255, 255, ia);
+                tex.vertex(m, r[0], r[1], r[4]).texture(0f, 1f).color(255, 255, 255, ia);
+            }
+            BufferRenderer.drawWithGlobalProgram(tex.end());
+        }
+
         RenderSystem.setShader(GameRenderer::getPositionColorProgram);
 
         BufferBuilder buf = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
@@ -464,7 +577,7 @@ public class SusChunkFinder extends Module {
                 float py = (float) (h.planeY - cam.y);
                 float t = 0.25f;
 
-                if (plane) {
+                if (plane && !imageOn) {
                     quad(buf, m, planeFill, px0, py, pz0, px1, py, pz0, px1, py, pz1, px0, py, pz1);
                     quad(buf, m, planeEdge, px0, py, pz0, px1, py, pz0, px1, py, pz0 + t, px0, py, pz0 + t);
                     quad(buf, m, planeEdge, px0, py, pz1 - t, px1, py, pz1 - t, px1, py, pz1, px0, py, pz1);
