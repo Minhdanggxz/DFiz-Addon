@@ -1,0 +1,5 @@
+{
+  "spawner_notify": {
+    "sounds": ["dfizaddon:spawner_notify"]
+  }
+}
