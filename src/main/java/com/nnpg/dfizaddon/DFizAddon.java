@@ -31,6 +31,8 @@ public class DFizAddon extends MeteorAddon {
         Modules.get().add(new RegionMap());
         Modules.get().add(new SusChunkFinder());
         Modules.get().add(new SpawnerBeam());
+        Modules.get().add(new SpawnerNotifier());
+        Modules.get().add(new SpawnerNametags());
         Modules.get().add(new DFizStorageEsp());
         Modules.get().add(new DFizPlayerEsp());
         Modules.get().add(new DFizHoleEsp());
