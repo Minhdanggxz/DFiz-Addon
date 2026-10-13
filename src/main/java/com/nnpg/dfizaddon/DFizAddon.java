@@ -7,6 +7,8 @@ import com.nnpg.dfizaddon.modules.esp.DFizStorageEsp;
 import com.nnpg.dfizaddon.modules.esp.DFizSusChunk;
 import com.nnpg.dfizaddon.modules.esp.RegionMap;
 import com.nnpg.dfizaddon.modules.esp.SpawnerBeam;
+import com.nnpg.dfizaddon.modules.esp.SpawnerNotifier;
+import com.nnpg.dfizaddon.modules.esp.SpawnerNametags;
 import com.nnpg.dfizaddon.modules.esp.SusChunkFinder;
 import com.nnpg.dfizaddon.modules.main.DFizFreecam;
 import com.nnpg.dfizaddon.modules.main.GodTrident;
