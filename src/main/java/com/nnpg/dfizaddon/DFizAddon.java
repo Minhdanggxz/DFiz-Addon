@@ -12,6 +12,7 @@ import com.nnpg.dfizaddon.modules.main.DFizFreecam;
 import com.nnpg.dfizaddon.modules.main.GodTrident;
 import com.nnpg.dfizaddon.modules.main.RtpMethod;
 import com.nnpg.dfizaddon.modules.esp.AmethystBypass;
+import com.nnpg.dfizaddon.modules.esp.BlockEntityDebug;
 import meteordevelopment.meteorclient.addons.MeteorAddon;
 import meteordevelopment.meteorclient.systems.modules.Category;
 import meteordevelopment.meteorclient.systems.modules.Modules;
@@ -35,6 +36,7 @@ public class DFizAddon extends MeteorAddon {
         Modules.get().add(new DFizHoleEsp());
         Modules.get().add(new DFizSusChunk());
         Modules.get().add(new AmethystBypass());
+        Modules.get().add(new BlockEntityDebug());
     }
 
     @Override
