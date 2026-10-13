@@ -545,7 +545,8 @@ public class SusChunkFinder extends Module {
 
         RenderSystem.setShader(GameRenderer::getPositionColorProgram);
 
-        BufferBuilder buf = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+        boolean anyColored = beam || star || (plane && !imageOn);
+        BufferBuilder buf = anyColored ? Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR) : null;
 
         for (Hit h : new ArrayList<>(current.values())) {
             int[] c = strongCol;
@@ -606,7 +607,7 @@ public class SusChunkFinder extends Module {
             }
         }
 
-        BufferRenderer.drawWithGlobalProgram(buf.end());
+        if (buf != null) BufferRenderer.drawWithGlobalProgram(buf.end());
 
         RenderSystem.enableDepthTest();
         RenderSystem.enableCull();
