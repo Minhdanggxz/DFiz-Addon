@@ -20,6 +20,7 @@ import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.ColorSetting;
 import meteordevelopment.meteorclient.settings.EnumSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.render.RenderUtils;
@@ -29,6 +30,7 @@ import meteordevelopment.orbit.EventHandler;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.network.packet.s2c.play.ChunkDataS2CPacket;
@@ -49,8 +51,6 @@ import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.LongConsumer;
 import java.util.function.LongPredicate;
-
-import static meteordevelopment.meteorclient.MeteorClient.mc;
 
 public class DFizSusChunk extends Module {
     private static final long SCAN_BUDGET_NANOS = 3_000_000L;
@@ -94,7 +94,7 @@ public class DFizSusChunk extends Module {
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
-    private final EnumSetting<Method> method = sgGeneral.add(new EnumSetting.Builder<Method>()
+    private final Setting<Method> method = sgGeneral.add(new EnumSetting.Builder<Method>()
         .name("method")
         .description("Classic reads the blocks, ANBS+ Scan reads the light data.")
         .defaultValue(Method.Classic)
@@ -102,7 +102,7 @@ public class DFizSusChunk extends Module {
         .build()
     );
 
-    private final IntSetting spreadRadius = sgGeneral.add(new IntSetting.Builder()
+    private final Setting<Integer> spreadRadius = sgGeneral.add(new IntSetting.Builder()
         .name("simulation-distance")
         .description("Chunk radius a signal spreads to.")
         .defaultValue(5)
@@ -112,7 +112,7 @@ public class DFizSusChunk extends Module {
         .build()
     );
 
-    private final IntSetting sensitivity = sgGeneral.add(new IntSetting.Builder()
+    private final Setting<Integer> sensitivity = sgGeneral.add(new IntSetting.Builder()
         .name("sensitivity")
         .description("Minimum heat for a chunk to be shown.")
         .defaultValue(6)
@@ -122,28 +122,28 @@ public class DFizSusChunk extends Module {
         .build()
     );
 
-    private final ColorSetting chunkColor = sgGeneral.add(new ColorSetting.Builder()
+    private final Setting<SettingColor> chunkColor = sgGeneral.add(new ColorSetting.Builder()
         .name("chunk-color")
         .description("Color of suspicious chunks.")
         .defaultValue(new SettingColor(255, 4, 4, 96))
         .build()
     );
 
-    private final BoolSetting tracers = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> tracers = sgGeneral.add(new BoolSetting.Builder()
         .name("tracers")
         .description("Draw tracers to the chunks.")
         .defaultValue(true)
         .build()
     );
 
-    private final EnumSetting<ShapeMode> shapeMode = sgGeneral.add(new EnumSetting.Builder<ShapeMode>()
+    private final Setting<ShapeMode> shapeMode = sgGeneral.add(new EnumSetting.Builder<ShapeMode>()
         .name("shape-mode")
         .description("How chunk boxes are rendered.")
         .defaultValue(ShapeMode.Both)
         .build()
     );
 
-    private final BoolSetting detectMined = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> detectMined = sgGeneral.add(new BoolSetting.Builder()
         .name("detect-mined-clusters")
         .description("Highlight chunks whose amethyst geode was mined out and lit up.")
         .defaultValue(false)
@@ -151,7 +151,7 @@ public class DFizSusChunk extends Module {
         .build()
     );
 
-    private final ColorSetting minedColor = sgGeneral.add(new ColorSetting.Builder()
+    private final Setting<SettingColor> minedColor = sgGeneral.add(new ColorSetting.Builder()
         .name("mined-color")
         .description("Color of mined geode chunks.")
         .defaultValue(new SettingColor(166, 77, 255, 96))
@@ -396,7 +396,7 @@ public class DFizSusChunk extends Module {
     }
 
     private static boolean isDonutFolia() {
-        ClientPlayNetworkHandler handler = mc.getNetworkHandler();
+        ClientPlayNetworkHandler handler = MinecraftClient.getInstance().getNetworkHandler();
         if (handler == null) return false;
         String brand = handler.getBrand();
         return brand != null && brand.contains("DonutFolia");
