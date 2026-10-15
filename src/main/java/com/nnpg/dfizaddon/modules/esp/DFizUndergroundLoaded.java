@@ -85,6 +85,21 @@ public class DFizUndergroundLoaded extends Module {
         .build()
     );
 
+    private final Setting<Boolean> remember = sgGeneral.add(new BoolSetting.Builder()
+        .name("remember")
+        .description("Keep showing chunks that were loaded underground even after they unload. Cleared when you leave the world or toggle the module.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<SettingColor> rememberedColor = sgGeneral.add(new ColorSetting.Builder()
+        .name("remembered-color")
+        .description("Color of remembered chunks that are no longer loaded.")
+        .defaultValue(new SettingColor(160, 160, 160, 60))
+        .visible(remember::get)
+        .build()
+    );
+
     private final Setting<ShapeMode> shapeMode = sgGeneral.add(new EnumSetting.Builder<ShapeMode>()
         .name("shape-mode")
         .description("How the chunks are drawn.")
@@ -116,6 +131,8 @@ public class DFizUndergroundLoaded extends Module {
     );
 
     private LongOpenHashSet loaded = new LongOpenHashSet();
+    private final LongOpenHashSet remembered = new LongOpenHashSet();
+    private Object rememberedDim;
     private List<double[]> areas = new ArrayList<>();
     private int timer;
 
@@ -125,6 +142,8 @@ public class DFizUndergroundLoaded extends Module {
 
     @Override
     public void onActivate() {
+        remembered.clear();
+        rememberedDim = null;
         loaded = new LongOpenHashSet();
         areas = new ArrayList<>();
         timer = Integer.MAX_VALUE - 1;
@@ -132,6 +151,8 @@ public class DFizUndergroundLoaded extends Module {
 
     @Override
     public void onDeactivate() {
+        remembered.clear();
+        rememberedDim = null;
         loaded = new LongOpenHashSet();
         areas = new ArrayList<>();
     }
@@ -141,7 +162,14 @@ public class DFizUndergroundLoaded extends Module {
         if (mc.world == null || mc.player == null) {
             loaded = new LongOpenHashSet();
             areas = new ArrayList<>();
+            remembered.clear();
+            rememberedDim = null;
             return;
+        }
+        Object dim = mc.world.getRegistryKey();
+        if (dim != rememberedDim) {
+            remembered.clear();
+            rememberedDim = dim;
         }
         if (++timer < scanInterval.get()) return;
         timer = 0;
@@ -163,6 +191,8 @@ public class DFizUndergroundLoaded extends Module {
         }
 
         loaded = result;
+        if (remember.get()) remembered.addAll(result);
+        else remembered.clear();
         areas = buildAreas(result);
     }
 
@@ -265,19 +295,13 @@ public class DFizUndergroundLoaded extends Module {
         return out;
     }
 
-    @EventHandler
-    private void onRender3D(Render3DEvent event) {
-        if (mc.world == null || mc.player == null || loaded.isEmpty()) return;
-
-        SettingColor c = color.get();
+    private void drawSet(Render3DEvent event, LongOpenHashSet set, LongOpenHashSet skip, SettingColor c, ShapeMode mode, double y) {
         Color fill = new Color(c.r, c.g, c.b, c.a);
         Color edge = new Color((int) (c.r * 0.77), (int) (c.g * 0.77), (int) (c.b * 0.77), Math.min(255, c.a * 3 / 2));
-        ShapeMode mode = shapeMode.get();
-        double y = planeY.get();
-
-        LongIterator it = loaded.iterator();
+        LongIterator it = set.iterator();
         while (it.hasNext()) {
             long key = it.nextLong();
+            if (skip != null && skip.contains(key)) continue;
             int cx = ChunkPos.getPackedX(key);
             int cz = ChunkPos.getPackedZ(key);
             double x1 = cx << 4;
@@ -289,12 +313,29 @@ public class DFizUndergroundLoaded extends Module {
                 event.renderer.quad(x1, y, z1, x2, y, z1, x2, y, z2, x1, y, z2, fill);
             }
             if (mode.lines()) {
-                if (!loaded.contains(ChunkPos.toLong(cx, cz - 1))) event.renderer.line(x1, y, z1, x2, y, z1, edge);
-                if (!loaded.contains(ChunkPos.toLong(cx, cz + 1))) event.renderer.line(x1, y, z2, x2, y, z2, edge);
-                if (!loaded.contains(ChunkPos.toLong(cx - 1, cz))) event.renderer.line(x1, y, z1, x1, y, z2, edge);
-                if (!loaded.contains(ChunkPos.toLong(cx + 1, cz))) event.renderer.line(x2, y, z1, x2, y, z2, edge);
+                if (!sameGroup(set, skip, ChunkPos.toLong(cx, cz - 1))) event.renderer.line(x1, y, z1, x2, y, z1, edge);
+                if (!sameGroup(set, skip, ChunkPos.toLong(cx, cz + 1))) event.renderer.line(x1, y, z2, x2, y, z2, edge);
+                if (!sameGroup(set, skip, ChunkPos.toLong(cx - 1, cz))) event.renderer.line(x1, y, z1, x1, y, z2, edge);
+                if (!sameGroup(set, skip, ChunkPos.toLong(cx + 1, cz))) event.renderer.line(x2, y, z1, x2, y, z2, edge);
             }
         }
+    }
+
+    private static boolean sameGroup(LongOpenHashSet set, LongOpenHashSet skip, long key) {
+        return set.contains(key) && (skip == null || !skip.contains(key));
+    }
+
+    @EventHandler
+    private void onRender3D(Render3DEvent event) {
+        if (mc.world == null || mc.player == null) return;
+        if (loaded.isEmpty() && remembered.isEmpty()) return;
+
+        SettingColor c = color.get();
+        ShapeMode mode = shapeMode.get();
+        double y = planeY.get();
+
+        if (remember.get()) drawSet(event, remembered, loaded, rememberedColor.get(), mode, y);
+        drawSet(event, loaded, null, c, mode, y);
 
         if (!tracers.get() || areas.isEmpty()) return;
         Color tracer = new Color(c.r, c.g, c.b, 255);
@@ -320,4 +361,4 @@ public class DFizUndergroundLoaded extends Module {
             }
         }
     }
-}
+                }
