@@ -61,6 +61,7 @@ public class SusChunkFinder extends Module {
     private static final int MIN_SHELL_PER_CHUNK = 3;
     private static final int THRESHOLD = 13;
     private static final boolean COUNT_LARGE_BUDS = false;
+    private static final int MAX_SURFACE_Y = 70;
     private static final int SCAN_INTERVAL_TICKS = 40;
     private static final float HALF_WIDTH = 0.2f;
     private static final long RGB_CYCLE_MS = 3000L;
@@ -146,16 +147,6 @@ public class SusChunkFinder extends Module {
         .description("Height of the plane above the surface.")
         .defaultValue(1.0)
         .sliderRange(-5.0, 20.0)
-        .visible(showChunkPlane::get)
-        .build()
-    );
-
-    private final Setting<Integer> maxWaterY = sgRender.add(new IntSetting.Builder()
-        .name("max-water-y")
-        .description("Where the plane sits on water, it never goes above this Y. Land is not limited.")
-        .defaultValue(70)
-        .range(-64, 320)
-        .sliderRange(-64, 320)
         .visible(showChunkPlane::get)
         .build()
     );
@@ -439,29 +430,23 @@ public class SusChunkFinder extends Module {
             if (!strong) continue;
 
             int hx = (int) (sx / n), hy = (int) (sy / n), hz = (int) (sz / n);
-            Hit h = new Hit(litMax, grown, hx, hy, hz, strong, (float) (surfaceY(world, hx, hz, maxWaterY.get()) + planeOffset.get()));
+            Hit h = new Hit(litMax, grown, hx, hy, hz, strong, (float) (surfaceY(world, hx, hz) + planeOffset.get()));
             found.put(entry.getKey(), h);
         }
         hits = found;
     }
 
-    private static int surfaceY(ClientWorld world, int x, int z, int maxWaterY) {
+    private static int surfaceY(ClientWorld world, int x, int z) {
         int baseX = Math.floorDiv(x, 16) * 16;
         int baseZ = Math.floorDiv(z, 16) * 16;
-        int bottom = world.getBottomY();
-        int best = bottom;
-        BlockPos.Mutable pos = new BlockPos.Mutable();
+        int best = world.getBottomY();
         for (int ox = 0; ox < 16; ox += 3) {
             for (int oz = 0; oz < 16; oz += 3) {
-                int px = baseX + ox;
-                int pz = baseZ + oz;
-                int y = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, px, pz);
-                boolean water = y > bottom && !world.getFluidState(pos.set(px, y - 1, pz)).isEmpty();
-                if (water) y = Math.min(y, maxWaterY);
+                int y = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, baseX + ox, baseZ + oz);
                 if (y > best) best = y;
             }
         }
-        return best;
+        return Math.min(best, MAX_SURFACE_Y);
     }
 
     private static int litCells(ClientWorld world, BlockPos centre) {

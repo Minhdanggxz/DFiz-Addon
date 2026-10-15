@@ -40,8 +40,8 @@ public class DFizUndergroundLoaded extends Module {
 
     private final Setting<Integer> maxY = sgGeneral.add(new IntSetting.Builder()
         .name("max-y")
-        .description("Highest height checked for underground blocks. Whole 16 block sections are checked.")
-        .defaultValue(30)
+        .description("Highest height checked for underground blocks.")
+        .defaultValue(-50)
         .range(-64, 320)
         .sliderRange(-64, 128)
         .build()
@@ -148,7 +148,17 @@ public class DFizUndergroundLoaded extends Module {
             int baseY = (bottom + i) << 4;
             if (baseY + 15 < low || baseY > high) continue;
             ChunkSection section = sections[i];
-            if (section != null && !section.isEmpty()) return true;
+            if (section == null || section.isEmpty()) continue;
+            if (baseY >= low && baseY + 15 <= high) return true;
+            int yFrom = Math.max(low, baseY) - baseY;
+            int yTo = Math.min(high, baseY + 15) - baseY;
+            for (int y = yFrom; y <= yTo; y++) {
+                for (int z = 0; z < 16; z++) {
+                    for (int x = 0; x < 16; x++) {
+                        if (!section.getBlockState(x, y, z).isAir()) return true;
+                    }
+                }
+            }
         }
         return false;
     }
