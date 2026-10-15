@@ -7,6 +7,7 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.renderer.ShapeMode;
+import meteordevelopment.meteorclient.settings.BlockListSetting;
 import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.ColorSetting;
 import meteordevelopment.meteorclient.settings.DoubleSetting;
@@ -19,12 +20,19 @@ import meteordevelopment.meteorclient.utils.render.RenderUtils;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
+import net.minecraft.block.Block;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.chunk.ChunkSection;
 import net.minecraft.world.chunk.WorldChunk;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class DFizUndergroundLoaded extends Module {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
@@ -44,6 +52,20 @@ public class DFizUndergroundLoaded extends Module {
         .defaultValue(-50)
         .range(-64, 320)
         .sliderRange(-64, 128)
+        .build()
+    );
+
+    private final Setting<List<Block>> filler = sgGeneral.add(new BlockListSetting.Builder()
+        .name("filler-blocks")
+        .description("Blocks the server uses to fill hidden underground. A chunk only counts if it has other blocks in range.")
+        .defaultValue(Blocks.STONE, Blocks.DEEPSLATE, Blocks.BEDROCK)
+        .build()
+    );
+
+    private final Setting<Boolean> debug = sgGeneral.add(new BoolSetting.Builder()
+        .name("debug")
+        .description("Print the block counts of your current chunk in range to chat.")
+        .defaultValue(false)
         .build()
     );
 
@@ -128,12 +150,15 @@ public class DFizUndergroundLoaded extends Module {
         ChunkPos center = mc.player.getChunkPos();
         int low = minY.get();
         int high = maxY.get();
+        Set<Block> fillerSet = new HashSet<>(filler.get());
         LongOpenHashSet result = new LongOpenHashSet();
+
+        if (debug.get()) printCounts(center, low, high);
 
         for (int x = center.x - range; x <= center.x + range; x++) {
             for (int z = center.z - range; z <= center.z + range; z++) {
                 WorldChunk chunk = mc.world.getChunkManager().getWorldChunk(x, z);
-                if (chunk != null && hasUnderground(chunk, low, high)) result.add(ChunkPos.toLong(x, z));
+                if (chunk != null && hasUnderground(chunk, low, high, fillerSet)) result.add(ChunkPos.toLong(x, z));
             }
         }
 
@@ -141,7 +166,7 @@ public class DFizUndergroundLoaded extends Module {
         areas = buildAreas(result);
     }
 
-    private static boolean hasUnderground(WorldChunk chunk, int low, int high) {
+    private static boolean hasUnderground(WorldChunk chunk, int low, int high, Set<Block> fillerSet) {
         ChunkSection[] sections = chunk.getSectionArray();
         int bottom = chunk.getBottomSectionCoord();
         for (int i = 0; i < sections.length; i++) {
@@ -149,18 +174,52 @@ public class DFizUndergroundLoaded extends Module {
             if (baseY + 15 < low || baseY > high) continue;
             ChunkSection section = sections[i];
             if (section == null || section.isEmpty()) continue;
-            if (baseY >= low && baseY + 15 <= high) return true;
+            if (baseY >= low && baseY + 15 <= high) {
+                if (section.hasAny(state -> !fillerSet.contains(state.getBlock()))) return true;
+                continue;
+            }
             int yFrom = Math.max(low, baseY) - baseY;
             int yTo = Math.min(high, baseY + 15) - baseY;
             for (int y = yFrom; y <= yTo; y++) {
                 for (int z = 0; z < 16; z++) {
                     for (int x = 0; x < 16; x++) {
-                        if (!section.getBlockState(x, y, z).isAir()) return true;
+                        if (!fillerSet.contains(section.getBlockState(x, y, z).getBlock())) return true;
                     }
                 }
             }
         }
         return false;
+    }
+
+    private void printCounts(ChunkPos pos, int low, int high) {
+        WorldChunk chunk = mc.world.getChunkManager().getWorldChunk(pos.x, pos.z);
+        if (chunk == null) return;
+        Map<Block, Integer> counts = new HashMap<>();
+        ChunkSection[] sections = chunk.getSectionArray();
+        int bottom = chunk.getBottomSectionCoord();
+        for (int i = 0; i < sections.length; i++) {
+            int baseY = (bottom + i) << 4;
+            if (baseY + 15 < low || baseY > high) continue;
+            ChunkSection section = sections[i];
+            if (section == null) continue;
+            int yFrom = Math.max(low, baseY) - baseY;
+            int yTo = Math.min(high, baseY + 15) - baseY;
+            for (int y = yFrom; y <= yTo; y++) {
+                for (int z = 0; z < 16; z++) {
+                    for (int x = 0; x < 16; x++) {
+                        BlockState state = section.getBlockState(x, y, z);
+                        counts.merge(state.getBlock(), 1, Integer::sum);
+                    }
+                }
+            }
+        }
+        List<Map.Entry<Block, Integer>> list = new ArrayList<>(counts.entrySet());
+        list.sort((e1, e2) -> e2.getValue() - e1.getValue());
+        StringBuilder out = new StringBuilder("Chunk " + pos.x + " " + pos.z + " [" + low + ".." + high + "]:");
+        for (int i = 0; i < Math.min(8, list.size()); i++) {
+            out.append(' ').append(list.get(i).getKey().getName().getString()).append('=').append(list.get(i).getValue());
+        }
+        info(out.toString());
     }
 
     private static List<double[]> buildAreas(LongOpenHashSet set) {
