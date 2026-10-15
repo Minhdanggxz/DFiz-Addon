@@ -59,8 +59,6 @@ public class DFizSusChunk extends Module {
     private static final int PACKET_MIN_Y = -16;
     private static final int PACKET_MAX_Y = 30;
     private static final int GEODE_TOP_Y = 47;
-    private static final int MIN_EXPOSED_BUDDING = 10;
-    private static final int MIN_EXPOSED_LINING = 160;
     private static final int GEODE_SETTLE_TICKS = 40;
     private static final int GEODE_CELL_SHIFT = 2;
     private static final int TORCH_LIGHT = 14;
@@ -155,6 +153,26 @@ public class DFizSusChunk extends Module {
         .name("mined-color")
         .description("Color of mined geode chunks.")
         .defaultValue(new SettingColor(166, 77, 255, 96))
+        .visible(detectMined::get)
+        .build()
+    );
+
+    private final Setting<Integer> minBudding = sgGeneral.add(new IntSetting.Builder()
+        .name("min-budding")
+        .description("Minimum exposed budding amethyst blocks for a geode that still has budding blocks.")
+        .defaultValue(10)
+        .range(1, 200)
+        .sliderRange(1, 100)
+        .visible(detectMined::get)
+        .build()
+    );
+
+    private final Setting<Integer> minLining = sgGeneral.add(new IntSetting.Builder()
+        .name("min-lining")
+        .description("Minimum exposed amethyst blocks for a geode with no budding blocks left.")
+        .defaultValue(160)
+        .range(1, 1000)
+        .sliderRange(10, 500)
         .visible(detectMined::get)
         .build()
     );
@@ -745,8 +763,8 @@ public class DFizSusChunk extends Module {
         LongOpenHashSet result = new LongOpenHashSet();
         for (GeodeCluster cluster : geodeClusters) {
             boolean big = cluster.budding() > 0
-                ? cluster.budding() >= MIN_EXPOSED_BUDDING
-                : cluster.lining().length >= MIN_EXPOSED_LINING;
+                ? cluster.budding() >= minBudding.get()
+                : cluster.lining().length >= minLining.get();
             if (big && settled(world, cluster) && unlit(world, cluster.lining())) result.add(cluster.chunk());
         }
         return result;
