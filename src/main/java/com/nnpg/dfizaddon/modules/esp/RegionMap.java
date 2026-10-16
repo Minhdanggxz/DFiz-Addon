@@ -12,13 +12,12 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.Vec3d;
 import java.util.HashMap;
 import java.util.Map;
 
 public class RegionMap extends Module {
-    private static final Logger LOG = LoggerFactory.getLogger("DFiz Addon");
+    private static final Logger LOG = LoggerFactory.getLogger("DFizAddon");
 
     private final SettingGroup displaySettings = settings.createGroup("Display");
     private final SettingGroup positionSettings = settings.createGroup("Position");
@@ -113,12 +112,6 @@ public class RegionMap extends Module {
             .defaultValue(new SettingColor(15, 15, 15, 255))
             .build());
 
-    private MatrixStack matrices;
-
-    private void flush() {
-        Renderer2D.COLOR.render(matrices);
-    }
-
     private final MapDataManager mapData;
     private final RegionRenderer regionRenderer;
     private final PlayerTracker playerTracker;
@@ -135,8 +128,6 @@ public class RegionMap extends Module {
     @EventHandler
     private void onRender2D(Render2DEvent event) {
         if (!isValidRenderState()) return;
-
-        matrices = event.drawContext.getMatrices();
 
         try {
             Vec3d playerPos = new Vec3d(mc.player.getX(), mc.player.getY(), mc.player.getZ());
@@ -233,7 +224,7 @@ public class RegionMap extends Module {
                 int legendY = legendStartY + i * 16;
                 Renderer2D.COLOR.quad(ctx.mapX, legendY, 14, 14, continentColors[i]);
             }
-            flush();
+            Renderer2D.COLOR.render();
 
             TextRenderer textRenderer = TextRenderer.get();
             if (textRenderer == null) return;
@@ -288,7 +279,7 @@ public class RegionMap extends Module {
                 int legendY = startY + i * 16;
                 Renderer2D.COLOR.quad(ctx.mapX, legendY, 14, 14, categories[i].color);
             }
-            flush();
+            Renderer2D.COLOR.render();
 
             TextRenderer textRenderer = TextRenderer.get();
             if (textRenderer == null) return startY + categories.length * 16;
@@ -539,6 +530,7 @@ public class RegionMap extends Module {
     }
 
     private class RegionRenderer {
+
         void renderMapBackground(MapRenderContext ctx) {
             if (ctx == null || mapBackgroundColor.get() == null) return;
 
@@ -548,7 +540,7 @@ public class RegionMap extends Module {
 
                 Renderer2D.COLOR.begin();
                 Renderer2D.COLOR.quad(ctx.mapX, ctx.mapY, ctx.getMapWidth(), ctx.getMapHeight(), bgColor);
-                flush();
+                Renderer2D.COLOR.render();
             } catch (Exception e) {
                 LOG.error("Unhandled error in " + getClass().getSimpleName(), e);
             }
@@ -591,7 +583,7 @@ public class RegionMap extends Module {
                     }
                 }
 
-                flush();
+                Renderer2D.COLOR.render();
             } catch (Exception e) {
                 LOG.error("Unhandled error in " + getClass().getSimpleName(), e);
             }
@@ -617,7 +609,7 @@ public class RegionMap extends Module {
                     Renderer2D.COLOR.quad(ctx.mapX, lineY, ctx.getMapWidth(), 1, lineColor);
                 }
 
-                flush();
+                Renderer2D.COLOR.render();
             } catch (Exception e) {
                 LOG.error("Unhandled error in " + getClass().getSimpleName(), e);
             }
@@ -664,6 +656,7 @@ public class RegionMap extends Module {
     }
 
     private class PlayerTracker {
+
         void renderPlayerPosition(MapRenderContext ctx, Vec3d playerPos, float yaw, SettingColor indicatorColor) {
             if (ctx == null || playerPos == null || indicatorColor == null) return;
 
@@ -672,6 +665,7 @@ public class RegionMap extends Module {
 
                 if (gridPos[0] >= 0 && gridPos[0] < mapData.getGridCols() &&
                         gridPos[1] >= 0 && gridPos[1] < mapData.getGridRows()) {
+
                     double[] cellPos = mapData.worldToCellPosition(playerPos.x, playerPos.z);
 
                     int indicatorX = ctx.mapX + gridPos[0] * ctx.cellSize + (int) (cellPos[0] * ctx.cellSize);
@@ -703,7 +697,7 @@ public class RegionMap extends Module {
                 int rightBaseY = centerY - (int) (Math.sin(rightBaseAngle) * arrowSize);
 
                 drawTriangleFilled(tipX, tipY, leftBaseX, leftBaseY, rightBaseX, rightBaseY, indicatorCol);
-                flush();
+                Renderer2D.COLOR.render();
             } catch (Exception e) {
                 LOG.error("Unhandled error in " + getClass().getSimpleName(), e);
             }
