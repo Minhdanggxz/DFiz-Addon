@@ -18,6 +18,7 @@ import com.nnpg.dfizaddon.modules.main.RtpMethod;
 import com.nnpg.dfizaddon.modules.esp.AmethystBypass;
 import com.nnpg.dfizaddon.modules.esp.BlockEntityDebug;
 import com.nnpg.dfizaddon.modules.esp.DFizUndergroundLoaded;
+import com.nnpg.dfizaddon.modules.main.FakeBanScreen;
 import meteordevelopment.meteorclient.addons.MeteorAddon;
 import meteordevelopment.meteorclient.systems.modules.Category;
 import meteordevelopment.meteorclient.systems.modules.Modules;
@@ -47,6 +48,7 @@ public class DFizAddon extends MeteorAddon {
         Modules.get().add(new DFizUndergroundLoaded());
         Modules.get().add(new AdminHud());
         Modules.get().add(new AntiVanish());
+        Modules.get().add(new FakeBanScreen());
     }
 
     @Override
