@@ -1,5 +1,6 @@
 package com.nnpg.dfizaddon.modules.esp;
 
+import net.minecraft.client.util.math.MatrixStack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -224,7 +225,7 @@ public class RegionMap extends Module {
                 int legendY = legendStartY + i * 16;
                 Renderer2D.COLOR.quad(ctx.mapX, legendY, 14, 14, continentColors[i]);
             }
-            Renderer2D.COLOR.render();
+            Renderer2D.COLOR.render(new MatrixStack());
 
             TextRenderer textRenderer = TextRenderer.get();
             if (textRenderer == null) return;
@@ -279,7 +280,7 @@ public class RegionMap extends Module {
                 int legendY = startY + i * 16;
                 Renderer2D.COLOR.quad(ctx.mapX, legendY, 14, 14, categories[i].color);
             }
-            Renderer2D.COLOR.render();
+            Renderer2D.COLOR.render(new MatrixStack());
 
             TextRenderer textRenderer = TextRenderer.get();
             if (textRenderer == null) return startY + categories.length * 16;
@@ -540,7 +541,7 @@ public class RegionMap extends Module {
 
                 Renderer2D.COLOR.begin();
                 Renderer2D.COLOR.quad(ctx.mapX, ctx.mapY, ctx.getMapWidth(), ctx.getMapHeight(), bgColor);
-                Renderer2D.COLOR.render();
+                Renderer2D.COLOR.render(new MatrixStack());
             } catch (Exception e) {
                 LOG.error("Unhandled error in " + getClass().getSimpleName(), e);
             }
@@ -583,7 +584,7 @@ public class RegionMap extends Module {
                     }
                 }
 
-                Renderer2D.COLOR.render();
+                Renderer2D.COLOR.render(new MatrixStack());
             } catch (Exception e) {
                 LOG.error("Unhandled error in " + getClass().getSimpleName(), e);
             }
@@ -609,7 +610,7 @@ public class RegionMap extends Module {
                     Renderer2D.COLOR.quad(ctx.mapX, lineY, ctx.getMapWidth(), 1, lineColor);
                 }
 
-                Renderer2D.COLOR.render();
+                Renderer2D.COLOR.render(new MatrixStack());
             } catch (Exception e) {
                 LOG.error("Unhandled error in " + getClass().getSimpleName(), e);
             }
@@ -697,7 +698,7 @@ public class RegionMap extends Module {
                 int rightBaseY = centerY - (int) (Math.sin(rightBaseAngle) * arrowSize);
 
                 drawTriangleFilled(tipX, tipY, leftBaseX, leftBaseY, rightBaseX, rightBaseY, indicatorCol);
-                Renderer2D.COLOR.render();
+                Renderer2D.COLOR.render(new MatrixStack());
             } catch (Exception e) {
                 LOG.error("Unhandled error in " + getClass().getSimpleName(), e);
             }
