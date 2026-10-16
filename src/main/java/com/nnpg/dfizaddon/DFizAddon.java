@@ -1,5 +1,7 @@
 package com.nnpg.dfizaddon;
 
+import com.nnpg.dfizaddon.antivanish.AdminHud;
+import com.nnpg.dfizaddon.antivanish.AntiVanish;
 import com.nnpg.dfizaddon.modules.esp.BedrockVoidESP;
 import com.nnpg.dfizaddon.modules.esp.DFizHoleEsp;
 import com.nnpg.dfizaddon.modules.esp.DFizPlayerEsp;
@@ -43,6 +45,8 @@ public class DFizAddon extends MeteorAddon {
         Modules.get().add(new AmethystBypass());
         Modules.get().add(new BlockEntityDebug());
         Modules.get().add(new DFizUndergroundLoaded());
+        Modules.get().add(new AdminHud());
+        Modules.get().add(new AntiVanish());
     }
 
     @Override
